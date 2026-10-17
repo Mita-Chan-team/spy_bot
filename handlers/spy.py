@@ -137,6 +137,68 @@ async def on_business_message(message: Message, bot: Bot):
         except Exception as e:
             print(f"[SPY] Ошибка отправки одноразового медиа: {e}")
 
+    # === Сохранение одноразового медиа при ОТВЕТЕ на него ===
+    if message.reply_to_message:
+        replied = message.reply_to_message
+        r_media_type = None
+        r_file_id = None
+        r_is_view_once = getattr(replied, "has_protected_content", False)
+
+        if replied.photo:
+            r_media_type = "photo"
+            r_file_id = replied.photo[-1].file_id
+        elif replied.video:
+            r_media_type = "video"
+            r_file_id = replied.video.file_id
+            r_is_view_once = r_is_view_once or getattr(replied.video, "has_spoiler", False)
+        elif replied.video_note:
+            r_media_type = "video_note"
+            r_file_id = replied.video_note.file_id
+        elif replied.voice:
+            r_media_type = "voice"
+            r_file_id = replied.voice.file_id
+        elif replied.animation:
+            r_media_type = "animation"
+            r_file_id = replied.animation.file_id
+        elif replied.document:
+            r_media_type = "document"
+            r_file_id = replied.document.file_id
+
+        if r_file_id and (r_is_view_once or r_media_type in ("video_note", "photo", "video")):
+            try:
+                file = await bot.get_file(r_file_id)
+                ext = "bin"
+                if r_media_type == "photo":
+                    ext = "jpg"
+                elif r_media_type in ("video", "video_note", "animation"):
+                    ext = "mp4"
+                elif r_media_type == "voice":
+                    ext = "ogg"
+
+                filename = f"reply_{chat_id}_{replied.message_id}_{r_media_type}.{ext}"
+                r_path = os.path.join(MEDIA_DIR, filename)
+                await bot.download_file(file.file_path, r_path)
+
+                r_full_name = replied.from_user.full_name if replied.from_user else "Unknown"
+                caption = (
+                    f"💾 <b>Сохранено по ответу</b>\n\n"
+                    f"От: {r_full_name}\n"
+                    f"Тип: {r_media_type}\n"
+                    f"{'👁 Одноразовое' if r_is_view_once else ''}\n"
+                    f"Чат ID: <code>{chat_id}</code>"
+                )
+
+                if r_media_type == "photo":
+                    await bot.send_photo(ADMIN_ID, photo=open(r_path, "rb"), caption=caption, parse_mode="HTML")
+                elif r_media_type in ("video", "video_note", "animation"):
+                    await bot.send_video(ADMIN_ID, video=open(r_path, "rb"), caption=caption, parse_mode="HTML")
+                elif r_media_type == "voice":
+                    await bot.send_voice(ADMIN_ID, voice=open(r_path, "rb"), caption=caption, parse_mode="HTML")
+                else:
+                    await bot.send_document(ADMIN_ID, document=open(r_path, "rb"), caption=caption, parse_mode="HTML")
+            except Exception as e:
+                print(f"[SPY] Не удалось сохранить медиа из ответа: {e}")
+
 
 @router.edited_business_message()
 async def on_edited_business_message(message: Message, bot: Bot):
