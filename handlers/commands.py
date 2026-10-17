@@ -16,8 +16,20 @@ def get_user_state(user_id: int) -> dict:
             "online": False, "bold": False, "italic": False,
             "underline": False, "monospace": False, "kawaii": False,
             "troll": False, "autoai": False, "language": None,
+            "clone": False, "spam_active": False,
         }
     return user_states[user_id]
+
+
+async def reply_edit(message: Message, text: str, **kwargs):
+    """Редактирует исходное сообщение с командой. Если не получается — отправляет новое."""
+    try:
+        await message.edit_text(text, **kwargs)
+    except Exception:
+        try:
+            await message.answer(text, **kwargs)
+        except Exception:
+            pass
 
 
 @router.message(F.text.startswith("."))
@@ -59,7 +71,7 @@ async def handle_dot_commands(message: Message):
             ".mute .unmute .pin .unpin .spam .stop .del\n\n"
             "<i>Spy: уведомления об удалении/редактировании + сохранение одноразовых медиа приходят в личку с ботом.</i>"
         )
-        await message.answer(help_text, parse_mode="HTML")
+        await reply_edit(message, help_text, parse_mode="HTML")
         return
 
     # ==================== ARCHIVE ====================
@@ -69,7 +81,7 @@ async def handle_dot_commands(message: Message):
             chats = await get_chat_list()
             total = await count_messages()
             if not chats:
-                await message.answer("Архив пуст. Пока нет сохранённых сообщений.")
+                await reply_edit(message, "Архив пуст. Пока нет сохранённых сообщений.")
                 return
             lines = [f"<b>📂 Чаты в архиве</b> (всего сообщений: {total})\n"]
             for c in chats:
@@ -77,7 +89,7 @@ async def handle_dot_commands(message: Message):
                     f"• <code>{c['chat_id']}</code> — {c['last_name'] or 'Unknown'}\n"
                     f"  сообщений: {c['msg_count']} | последнее: {c['last_date'] or '—'}"
                 )
-            await message.answer("\n".join(lines), parse_mode="HTML")
+            await reply_edit(message, "\n".join(lines), parse_mode="HTML")
             return
 
         # .archive <chat_id> [limit]
@@ -100,7 +112,7 @@ async def handle_dot_commands(message: Message):
             total = await count_messages(chat_id)
             rows = await get_chat_history(chat_id, limit=limit)
             if not rows:
-                await message.answer(f"В чате <code>{chat_id}</code> ничего не найдено.", parse_mode="HTML")
+                await reply_edit(message, f"В чате <code>{chat_id}</code> ничего не найдено.", parse_mode="HTML")
                 return
             lines = [f"<b>📜 История чата {chat_id}</b> (показано {len(rows)} из {total})\n"]
             for r in rows:
@@ -122,7 +134,7 @@ async def handle_dot_commands(message: Message):
         rows = await get_recent_messages(limit=limit)
         total = await count_messages()
         if not rows:
-            await message.answer("Архив пуст")
+            await reply_edit(message, "Архив пуст")
             return
         lines = [f"<b>Последние сообщения</b> (всего в архиве: {total})\n"]
         for r in rows:
@@ -130,14 +142,14 @@ async def handle_dot_commands(message: Message):
                 f"#{r['id']} | {r['full_name']} | chat:<code>{r['chat_id']}</code>\n"
                 f"<code>{(r['text'] or '')[:120]}</code>"
             )
-        await message.answer("\n\n".join(lines), parse_mode="HTML")
+        await reply_edit(message, "\n\n".join(lines), parse_mode="HTML")
         return
 
     # ==================== ONLINE ====================
     if cmd == ".online":
         state["online"] = not state["online"]
         status = "включён ✅" if state["online"] else "выключен ❌"
-        await message.answer(f"Постоянный онлайн {status}")
+        await reply_edit(message, f"Постоянный онлайн {status}")
         return
 
     # ==================== INFO / WHO ====================
@@ -152,32 +164,32 @@ async def handle_dot_commands(message: Message):
             f"Язык: {target.language_code or '—'}\n"
             f"Premium: {'да ✅' if is_premium else 'нет'}"
         )
-        await message.answer(text_out, parse_mode="HTML")
+        await reply_edit(message, text_out, parse_mode="HTML")
         return
 
     # ==================== CALC ====================
     if cmd == ".calc":
         if not args:
-            await message.answer("Использование: <code>.calc 2+2*2</code>", parse_mode="HTML")
+            await reply_edit(message, "Использование: <code>.calc 2+2*2</code>", parse_mode="HTML")
             return
         try:
             result = eval(args, {"__builtins__": {}}, {})
-            await message.answer(f"🧮 <b>Результат:</b> <code>{result}</code>", parse_mode="HTML")
+            await reply_edit(message, f"🧮 <b>Результат:</b> <code>{result}</code>", parse_mode="HTML")
         except Exception:
-            await message.answer("❌ Ошибка в выражении")
+            await reply_edit(message, "❌ Ошибка в выражении")
         return
 
     # ==================== WEATHER ====================
     if cmd == ".weather":
         city = args or "Киев"
         result = await get_weather(city)
-        await message.answer(f"🌤 {result}")
+        await reply_edit(message, f"🌤 {result}")
         return
 
     # ==================== TIME ====================
     if cmd == ".time":
         city = args or "Киев"
-        await message.answer(get_time(city), parse_mode="HTML")
+        await reply_edit(message, get_time(city), parse_mode="HTML")
         return
 
     # ==================== PASSWORD ====================
@@ -188,20 +200,20 @@ async def handle_dot_commands(message: Message):
         except ValueError:
             length = 12
         pwd = generate_password(length)
-        await message.answer(f"🔑 Пароль ({length}): <code>{pwd}</code>", parse_mode="HTML")
+        await reply_edit(message, f"🔑 Пароль ({length}): <code>{pwd}</code>", parse_mode="HTML")
         return
 
     # ==================== CRYPTO ====================
     if cmd == ".crypto":
         symbol = args or "btc"
         result = await get_crypto(symbol)
-        await message.answer(result, parse_mode="HTML")
+        await reply_edit(message, result, parse_mode="HTML")
         return
 
     # ==================== QR ====================
     if cmd == ".qr":
         if not args:
-            await message.answer("Использование: <code>.qr текст или ссылка</code>", parse_mode="HTML")
+            await reply_edit(message, "Использование: <code>.qr текст или ссылка</code>", parse_mode="HTML")
             return
         url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={urllib.parse.quote(args)}"
         await message.answer_photo(url, caption=f"QR-код для:\n<code>{args}</code>", parse_mode="HTML")
@@ -209,27 +221,25 @@ async def handle_dot_commands(message: Message):
 
     # ==================== FUCK ====================
     if cmd == ".fuck":
-        msg = await message.answer("⬛")
         frames = ["⬛", "💀", "☠️", "🔥", "пошёл нахуй", "пошёл нахуй 💀", "🖤 пошёл нахуй 🖤"]
         for frame in frames:
-            await asyncio.sleep(0.45)
             try:
-                await msg.edit_text(frame)
+                await message.edit_text(frame)
             except Exception:
                 break
+            await asyncio.sleep(0.45)
         return
 
     # ==================== LOVE ====================
     if cmd == ".love":
-        msg = await message.answer("❤️")
         for _ in range(8):
-            await asyncio.sleep(0.35)
             try:
-                await msg.edit_text(random.choice(LOVE_FRAMES))
+                await message.edit_text(random.choice(LOVE_FRAMES))
             except Exception:
                 break
+            await asyncio.sleep(0.35)
         try:
-            await msg.edit_text("💖 Люблю 💖")
+            await message.edit_text("💖 Люблю 💖")
         except Exception:
             pass
         return
@@ -239,50 +249,48 @@ async def handle_dot_commands(message: Message):
         target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
         percent = random.randint(0, 100)
         phrase = random.choice(GAY_PHRASES).format(percent=percent)
-        await message.answer(f"🏳️‍🌈 {target.first_name} {phrase}")
+        await reply_edit(message, f"🏳️‍🌈 {target.first_name} {phrase}")
         return
 
     # ==================== SECRET ====================
     if cmd == ".secret":
-        msg = await message.answer(SECRET_FRAMES[0])
-        for frame in SECRET_FRAMES[1:]:
-            await asyncio.sleep(0.35)
+        for frame in SECRET_FRAMES:
             try:
-                await msg.edit_text(frame)
+                await message.edit_text(frame)
             except Exception:
                 break
+            await asyncio.sleep(0.35)
         return
 
     # ==================== TYPE ====================
     if cmd == ".type":
         if not args:
-            await message.answer("Использование: <code>.type любой текст</code>", parse_mode="HTML")
+            await reply_edit(message, "Использование: <code>.type любой текст</code>", parse_mode="HTML")
             return
-        msg = await message.answer("▌")
         current = ""
         for char in args:
             current += char
             try:
-                await msg.edit_text(current + "▌")
-                await asyncio.sleep(0.07)
+                await message.edit_text(current + "▌")
             except Exception:
                 break
+            await asyncio.sleep(0.07)
         try:
-            await msg.edit_text(current)
+            await message.edit_text(current)
         except Exception:
             pass
         return
 
     # ==================== PODKAT ====================
     if cmd == ".podkat":
-        await message.answer(random.choice(PODKATS))
+        await reply_edit(message, random.choice(PODKATS))
         return
 
     # ==================== TROLL ====================
     if cmd == ".troll":
         state["troll"] = not state["troll"]
         status = "включён 😈" if state["troll"] else "выключен 🙂"
-        await message.answer(f"Режим троллинга {status}")
+        await reply_edit(message, f"Режим троллинга {status}")
         return
 
     # ==================== FORMATTING ====================
@@ -290,24 +298,24 @@ async def handle_dot_commands(message: Message):
         key = cmd[1:]
         state[key] = not state[key]
         status = "включён ✅" if state[key] else "выключен ❌"
-        await message.answer(f"Режим <b>{key}</b> {status}", parse_mode="HTML")
+        await reply_edit(message, f"Режим <b>{key}</b> {status}", parse_mode="HTML")
         return
 
     # ==================== LANGUAGE ====================
     if cmd == ".language":
         if not args or args.lower() == "off":
             state["language"] = None
-            await message.answer("Перевод выключен")
+            await reply_edit(message, "Перевод выключен")
         else:
             state["language"] = args.lower()[:5]
-            await message.answer(f"Язык перевода: <b>{state['language']}</b>", parse_mode="HTML")
+            await reply_edit(message, f"Язык перевода: <b>{state['language']}</b>", parse_mode="HTML")
         return
 
     # ==================== AUTOAI ====================
     if cmd == ".autoai":
         state["autoai"] = not state["autoai"]
         status = "включён 🤖" if state["autoai"] else "выключен"
-        await message.answer(f"Авто-AI {status}", parse_mode="HTML")
+        await reply_edit(message, f"Авто-AI {status}", parse_mode="HTML")
         return
 
     # ==================== DICE / CASINO ====================
@@ -413,7 +421,7 @@ async def handle_dot_commands(message: Message):
                 async with session.get(url) as resp:
                     data = await resp.json()
                     translated = data.get("responseData", {}).get("translatedText", "Ошибка перевода")
-            await message.answer(f"🌐 <b>Перевод ({lang}):</b>\n{translated}", parse_mode="HTML")
+            await reply_edit(message, f"🌐 <b>Перевод ({lang}):</b>\n{translated}", parse_mode="HTML")
         except Exception as e:
             await message.answer(f"Ошибка перевода: {e}")
         return
@@ -432,7 +440,7 @@ async def handle_dot_commands(message: Message):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=30) as resp:
                     answer = await resp.text()
-            await message.answer(f"🤖 {answer[:3000]}")
+            await reply_edit(message, f"🤖 {answer[:3000]}")
         except Exception as e:
             await message.answer(f"Ошибка AI: {e}")
         return
@@ -461,7 +469,7 @@ async def handle_dot_commands(message: Message):
 
     if cmd == ".stop":
         state["spam_active"] = False
-        await message.answer("⏹ Спам остановлен")
+        await reply_edit(message, "⏹ Спам остановлен")
         return
 
     # ==================== ID ====================
@@ -479,7 +487,7 @@ async def handle_dot_commands(message: Message):
     if cmd == ".chance" or cmd == ".random":
         percent = random.randint(0, 100)
         text_q = args or "этого"
-        await message.answer(f"🎲 Вероятность {text_q}: <b>{percent}%</b>", parse_mode="HTML")
+        await reply_edit(message, f"🎲 Вероятность {text_q}: <b>{percent}%</b>", parse_mode="HTML")
         return
 
     # ==================== CHOOSE ====================
@@ -491,12 +499,12 @@ async def handle_dot_commands(message: Message):
         if len(options) < 2:
             await message.answer("Нужно минимум 2 варианта")
             return
-        await message.answer(f"🎯 Я выбираю: <b>{random.choice(options)}</b>", parse_mode="HTML")
+        await reply_edit(message, f"🎯 Я выбираю: <b>{random.choice(options)}</b>", parse_mode="HTML")
         return
 
     # ==================== FLIP ====================
     if cmd == ".flip" or cmd == ".coin":
-        await message.answer("🪙 " + random.choice(["Орёл", "Решка"]))
+        await reply_edit(message, "🪙 " + random.choice(["Орёл", "Решка"]))
         return
 
     # ==================== SHIP ====================
@@ -507,7 +515,7 @@ async def handle_dot_commands(message: Message):
         p1 = message.from_user.first_name
         p2 = message.reply_to_message.from_user.first_name
         percent = random.randint(0, 100)
-        await message.answer(f"💘 Совместимость {p1} + {p2}: <b>{percent}%</b>", parse_mode="HTML")
+        await reply_edit(message, f"💘 Совместимость {p1} + {p2}: <b>{percent}%</b>", parse_mode="HTML")
         return
 
     # ==================== SAY ====================
@@ -528,7 +536,7 @@ async def handle_dot_commands(message: Message):
             await message.answer("Ответь на стикер")
             return
         st = message.reply_to_message.sticker
-        await message.answer(f"Sticker ID:\n<code>{st.file_id}</code>", parse_mode="HTML")
+        await reply_edit(message, f"Sticker ID:\n<code>{st.file_id}</code>", parse_mode="HTML")
         return
 
     # ==================== CLONE ====================
