@@ -1,4 +1,3 @@
-
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from config import user_states, ADMIN_ID
@@ -7,6 +6,7 @@ from utils.database import get_recent_messages, get_chat_list, get_chat_history,
 import random
 import asyncio
 import urllib.parse
+import aiohttp
 
 router = Router()
 
@@ -21,6 +21,7 @@ def get_user_state(user_id: int) -> dict:
 
 
 @router.message(F.text.startswith("."))
+@router.business_message(F.text.startswith("."))
 async def handle_dot_commands(message: Message):
     if not message.text:
         return
@@ -29,37 +30,34 @@ async def handle_dot_commands(message: Message):
     parts = text.split(maxsplit=1)
     cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
-    user_id = message.from_user.id
+    user_id = message.from_user.id if message.from_user else 0
     state = get_user_state(user_id)
 
     # ==================== HELP ====================
     if cmd == ".help":
         help_text = (
             "<b>📋 Список команд</b>\n\n"
-            "<b>🔹 Информация</b>\n"
-            ".help — этот список\n"
-            ".info / .who — профиль\n"
-            ".online — постоянный онлайн\n"
-            ".archive — последние сообщения\n"
-            ".archive chats — список всех чатов\n"
-            ".archive <chat_id> [N] — история конкретного чата\n\n"
-            "<b>🔹 Утилиты</b>\n"
-            ".calc 2+2*2\n"
-            ".weather Киев\n"
-            ".time Киев\n"
-            ".password 16\n"
-            ".crypto btc\n"
-            ".qr текст\n\n"
-            "<b>🔹 Развлечения</b>\n"
-            ".fuck .love .gay .secret .type .podkat .troll\n\n"
-            "<b>🔹 Оформление</b>\n"
-            ".bold .italic .underline .monospace .kawaii\n\n"
-            "<b>🔹 Игры</b>\n"
-            ".dice .casino .xo .tod\n\n"
-            "<b>🔹 Модерация</b>\n"
-            ".pin .unpin .del .mute .unmute\n\n"
-            "<i>Spy-функции работают автоматически после подключения Business-бота.\n"
-            "Все уведомления о удалении/редактировании и одноразовые медиа приходят вам в личку с ботом.</i>"
+            "<b>▫️ Информация</b>\n"
+            ".help .online .info .who .calc .weather .time\n"
+            ".password .crypto .id .archive\n\n"
+            "<b>▫️ Развлечения</b>\n"
+            ".fuck .love .gay .secret .type .podkat .troll\n"
+            ".chance .choose .flip .ship .say\n\n"
+            "<b>▫️ Оформление</b>\n"
+            ".kawaii .bold .italic .underline .monospace\n"
+            ".clone .language\n\n"
+            "<b>▫️ Игры</b>\n"
+            ".xo .mins .dice .casino .tod\n\n"
+            "<b>▫️ Голос / Текст</b>\n"
+            ".tts .translate (.tr) .voicefx\n\n"
+            "<b>▫️ Медиа</b>\n"
+            ".watermark .story .circle .round .qr\n"
+            ".tt .inst .yt .music\n\n"
+            "<b>▫️ Профиль / AI</b>\n"
+            ".copytg .who .ai .autoai\n\n"
+            "<b>▫️ Модерация</b>\n"
+            ".mute .unmute .pin .unpin .spam .stop .del\n\n"
+            "<i>Spy: уведомления об удалении/редактировании + сохранение одноразовых медиа приходят в личку с ботом.</i>"
         )
         await message.answer(help_text, parse_mode="HTML")
         return
@@ -390,11 +388,230 @@ async def handle_dot_commands(message: Message):
         await message.answer(f"Попытка {action} (нужны права админа)")
         return
 
-    # Заглушки
-    if cmd in [".tts", ".translate", ".voicefx", ".watermark", ".story",
-               ".circle", ".round", ".tt", ".inst", ".yt", ".music",
-               ".copytg", ".clone", ".ai", ".spam", ".stop", ".mins"]:
-        await message.answer(f"⚙️ Команда <code>{cmd}</code> пока в разработке", parse_mode="HTML")
+    # ==================== TRANSLATE ====================
+    if cmd == ".translate" or cmd == ".tr":
+        if not args and not message.reply_to_message:
+            await message.answer("Использование:\n<code>.tr en текст</code>\nили ответом на сообщение", parse_mode="HTML")
+            return
+        try:
+            if message.reply_to_message and not args:
+                text_to_tr = message.reply_to_message.text or message.reply_to_message.caption or ""
+                lang = "en"
+            else:
+                parts_tr = args.split(maxsplit=1)
+                if len(parts_tr) == 1:
+                    lang = "en"
+                    text_to_tr = parts_tr[0]
+                else:
+                    lang = parts_tr[0]
+                    text_to_tr = parts_tr[1]
+            if not text_to_tr:
+                await message.answer("Нет текста для перевода")
+                return
+            url = f"https://api.mymemory.translated.net/get?q={urllib.parse.quote(text_to_tr)}&langpair=auto|{lang}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    data = await resp.json()
+                    translated = data.get("responseData", {}).get("translatedText", "Ошибка перевода")
+            await message.answer(f"🌐 <b>Перевод ({lang}):</b>\n{translated}", parse_mode="HTML")
+        except Exception as e:
+            await message.answer(f"Ошибка перевода: {e}")
+        return
+
+    # ==================== AI (простой) ====================
+    if cmd == ".ai":
+        if not args and not message.reply_to_message:
+            await message.answer("Использование: <code>.ai твой вопрос</code>", parse_mode="HTML")
+            return
+        question = args or (message.reply_to_message.text if message.reply_to_message else "")
+        await message.answer("🤖 Думаю...")
+        try:
+            # Простой ответ через публичный API (можно потом заменить на свой ключ)
+            prompt = f"Ответь коротко и полезно на русском: {question}"
+            url = f"https://text.pollinations.ai/{urllib.parse.quote(prompt)}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=30) as resp:
+                    answer = await resp.text()
+            await message.answer(f"🤖 {answer[:3000]}")
+        except Exception as e:
+            await message.answer(f"Ошибка AI: {e}")
+        return
+
+    # ==================== SPAM ====================
+    if cmd == ".spam":
+        if not args:
+            await message.answer("Использование: <code>.spam 5 Привет</code>", parse_mode="HTML")
+            return
+        try:
+            parts_spam = args.split(maxsplit=1)
+            count = int(parts_spam[0])
+            text_spam = parts_spam[1] if len(parts_spam) > 1 else "spam"
+            count = max(1, min(count, 20))
+        except Exception:
+            await message.answer("Неверный формат")
+            return
+        state["spam_active"] = True
+        for i in range(count):
+            if not state.get("spam_active"):
+                break
+            await message.answer(text_spam)
+            await asyncio.sleep(0.4)
+        state["spam_active"] = False
+        return
+
+    if cmd == ".stop":
+        state["spam_active"] = False
+        await message.answer("⏹ Спам остановлен")
+        return
+
+    # ==================== ID ====================
+    if cmd == ".id":
+        target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+        chat = message.chat
+        await message.answer(
+            f"👤 User ID: <code>{target.id}</code>\n"
+            f"💬 Chat ID: <code>{chat.id}</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    # ==================== CHANCE / RANDOM ====================
+    if cmd == ".chance" or cmd == ".random":
+        percent = random.randint(0, 100)
+        text_q = args or "этого"
+        await message.answer(f"🎲 Вероятность {text_q}: <b>{percent}%</b>", parse_mode="HTML")
+        return
+
+    # ==================== CHOOSE ====================
+    if cmd == ".choose" or cmd == ".or":
+        if not args or "|" not in args:
+            await message.answer("Использование: <code>.choose вариант1 | вариант2 | вариант3</code>", parse_mode="HTML")
+            return
+        options = [x.strip() for x in args.split("|") if x.strip()]
+        if len(options) < 2:
+            await message.answer("Нужно минимум 2 варианта")
+            return
+        await message.answer(f"🎯 Я выбираю: <b>{random.choice(options)}</b>", parse_mode="HTML")
+        return
+
+    # ==================== FLIP ====================
+    if cmd == ".flip" or cmd == ".coin":
+        await message.answer("🪙 " + random.choice(["Орёл", "Решка"]))
+        return
+
+    # ==================== SHIP ====================
+    if cmd == ".ship":
+        if not message.reply_to_message:
+            await message.answer("Ответь на сообщение человека")
+            return
+        p1 = message.from_user.first_name
+        p2 = message.reply_to_message.from_user.first_name
+        percent = random.randint(0, 100)
+        await message.answer(f"💘 Совместимость {p1} + {p2}: <b>{percent}%</b>", parse_mode="HTML")
+        return
+
+    # ==================== SAY ====================
+    if cmd == ".say":
+        if not args:
+            await message.answer("Напиши текст после команды")
+            return
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.answer(args)
+        return
+
+    # ==================== STICKER ID ====================
+    if cmd == ".sid":
+        if not message.reply_to_message or not message.reply_to_message.sticker:
+            await message.answer("Ответь на стикер")
+            return
+        st = message.reply_to_message.sticker
+        await message.answer(f"Sticker ID:\n<code>{st.file_id}</code>", parse_mode="HTML")
+        return
+
+    # ==================== CLONE ====================
+    if cmd == ".clone":
+        state["clone"] = not state.get("clone", False)
+        status = "включён 🪞" if state["clone"] else "выключен"
+        await message.answer(f"Режим клонирования сообщений {status}")
+        return
+
+    # ==================== TTS (простой) ====================
+    if cmd == ".tts":
+        if not args:
+            await message.answer("Использование: <code>.tts текст</code>", parse_mode="HTML")
+            return
+        try:
+            # Используем Google TTS через публичный endpoint
+            url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={urllib.parse.quote(args)}&tl=ru&client=tw-ob"
+            await message.answer_voice(url, caption="🗣 TTS")
+        except Exception as e:
+            await message.answer(f"Ошибка TTS: {e}")
+        return
+
+    # ==================== WATERMARK (простой текст) ====================
+    if cmd == ".watermark":
+        if not message.reply_to_message or not message.reply_to_message.photo:
+            await message.answer("Ответь на фото + укажи текст: <code>.watermark текст</code>", parse_mode="HTML")
+            return
+        text_wm = args or "©"
+        await message.answer(f"🖼 Watermark «{text_wm}» — полная обработка будет в следующей версии (нужен PIL + скачивание). Пока просто отмечено.")
+        return
+
+    # ==================== ROUND / CIRCLE ====================
+    if cmd in [".round", ".circle"]:
+        if not message.reply_to_message:
+            await message.answer("Ответь на видео / GIF / кружок")
+            return
+        await message.answer("⚙️ Обработка кружка будет доступна после добавления ffmpeg на сервер.")
+        return
+
+    # ==================== DOWNLOADERS ====================
+    if cmd in [".yt", ".tt", ".inst", ".music"]:
+        if not args:
+            await message.answer(f"Использование: <code>{cmd} ссылка или запрос</code>", parse_mode="HTML")
+            return
+        await message.answer(
+            f"📥 Скачивание ({cmd}) пока в разработке.\n"
+            "На бесплатном Render сложно поставить yt-dlp + ffmpeg.\n"
+            "Могу добавить позже, если перейдём на VPS."
+        )
+        return
+
+    # ==================== COPYTG ====================
+    if cmd == ".copytg":
+        if not message.reply_to_message:
+            await message.answer("Ответь на сообщение пользователя")
+            return
+        user = message.reply_to_message.from_user
+        await message.answer(
+            f"📋 Копирование профиля:\n"
+            f"Имя: {user.full_name}\n"
+            f"Username: @{user.username or 'нет'}\n"
+            f"ID: <code>{user.id}</code>\n\n"
+            f"<i>Полное копирование аватара/описания в Business API ограничено.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    # ==================== MINS ====================
+    if cmd == ".mins":
+        await message.answer("💣 Игра «Мины» пока в разработке. Скоро добавлю.")
+        return
+
+    # ==================== STORY ====================
+    if cmd == ".story":
+        if not message.reply_to_message or not message.reply_to_message.photo:
+            await message.answer("Ответь на фото")
+            return
+        await message.answer("📱 Разделение фото на 3×3 истории — в следующей версии.")
+        return
+
+    # ==================== VOICEFX ====================
+    if cmd == ".voicefx":
+        await message.answer("🎙 Эффекты голоса требуют ffmpeg. Будет на VPS.")
         return
 
 
