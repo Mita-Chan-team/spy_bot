@@ -22,14 +22,53 @@ def get_user_state(user_id: int) -> dict:
 
 
 async def reply_edit(message: Message, text: str, **kwargs):
-    """Редактирует исходное сообщение с командой. Если не получается — отправляет новое."""
+    """
+    Меняет текст ТВОЕГО сообщения с командой на результат.
+    1) Пробует отредактировать
+    2) Если нельзя — удаляет твоё сообщение и шлёт новое от твоего имени
+    """
+    bc_id = getattr(message, "business_connection_id", None)
+    chat_id = message.chat.id
+    msg_id = message.message_id
+    bot = message.bot
+
+    # 1. Пробуем отредактировать исходное сообщение
     try:
-        await message.edit_text(text, **kwargs)
-    except Exception:
-        try:
+        if bc_id:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=chat_id,
+                message_id=msg_id,
+                business_connection_id=bc_id,
+                **kwargs
+            )
+        else:
+            await message.edit_text(text, **kwargs)
+        return
+    except Exception as e:
+        print(f"[CMD] edit failed: {e}")
+
+    # 2. Не получилось отредактировать → удаляем команду и шлём результат от твоего имени
+    try:
+        if bc_id:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            except Exception as e:
+                print(f"[CMD] delete failed: {e}")
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                business_connection_id=bc_id,
+                **kwargs
+            )
+        else:
+            try:
+                await message.delete()
+            except Exception:
+                pass
             await message.answer(text, **kwargs)
-        except Exception:
-            pass
+    except Exception as e:
+        print(f"[CMD] send fallback failed: {e}")
 
 
 @router.message(F.text.startswith("."))
@@ -224,7 +263,7 @@ async def handle_dot_commands(message: Message):
         frames = ["⬛", "💀", "☠️", "🔥", "пошёл нахуй", "пошёл нахуй 💀", "🖤 пошёл нахуй 🖤"]
         for frame in frames:
             try:
-                await message.edit_text(frame)
+                await reply_edit(message, frame)
             except Exception:
                 break
             await asyncio.sleep(0.45)
@@ -234,12 +273,12 @@ async def handle_dot_commands(message: Message):
     if cmd == ".love":
         for _ in range(8):
             try:
-                await message.edit_text(random.choice(LOVE_FRAMES))
+                await reply_edit(message, random.choice(LOVE_FRAMES))
             except Exception:
                 break
             await asyncio.sleep(0.35)
         try:
-            await message.edit_text("💖 Люблю 💖")
+            await reply_edit(message, "💖 Люблю 💖")
         except Exception:
             pass
         return
@@ -256,7 +295,7 @@ async def handle_dot_commands(message: Message):
     if cmd == ".secret":
         for frame in SECRET_FRAMES:
             try:
-                await message.edit_text(frame)
+                await reply_edit(message, frame)
             except Exception:
                 break
             await asyncio.sleep(0.35)
@@ -271,12 +310,12 @@ async def handle_dot_commands(message: Message):
         for char in args:
             current += char
             try:
-                await message.edit_text(current + "▌")
+                await reply_edit(message, current + "▌")
             except Exception:
                 break
             await asyncio.sleep(0.07)
         try:
-            await message.edit_text(current)
+            await reply_edit(message, current)
         except Exception:
             pass
         return
